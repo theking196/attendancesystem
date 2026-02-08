@@ -26,7 +26,32 @@ function require_role(array $allowedRoles): string
 {
     $role = AccessGuard::currentRole();
     if (!$role->isAny($allowedRoles)) {
-        json_response(['error' => 'Forbidden.'], 403);
+        json_response([
+            'error' => 'Forbidden.',
+            'rbac' => [
+                'role' => $role->name(),
+                'permissions' => $role->permissions(),
+                'required_roles' => $allowedRoles,
+            ],
+        ], 403);
+        exit;
+    }
+
+    return $role->name();
+}
+
+function require_permission(string $permission): string
+{
+    $role = AccessGuard::currentRole();
+    if (!$role->allows($permission)) {
+        json_response([
+            'error' => 'Forbidden.',
+            'rbac' => [
+                'role' => $role->name(),
+                'permissions' => $role->permissions(),
+                'required_permissions' => [$permission],
+            ],
+        ], 403);
         exit;
     }
 
@@ -59,6 +84,25 @@ if ($method === 'GET' && $path === '/') {
     exit;
 }
 
+if ($method === 'GET' && $path === '/app') {
+    http_response_code(200);
+    header('Content-Type: text/html; charset=UTF-8');
+    echo '<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Attendance System Dashboard</title>
+    <link rel="stylesheet" href="/css/app.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/js/app.js"></script>
+  </body>
+</html>';
+    exit;
+}
+
 if ($method === 'POST' && $path === '/jobs/attendance-recognition') {
     $rawBody = file_get_contents('php://input');
     $payload = $rawBody !== '' ? json_decode($rawBody, true) : [];
@@ -82,6 +126,65 @@ if ($method === 'GET' && preg_match('#^/jobs/(\d+)$#', (string) $path, $matches)
     }
 
     json_response($job, 200);
+    exit;
+}
+
+if ($method === 'GET' && $path === '/api/v1/me') {
+    $role = AccessGuard::currentRole();
+    json_response([
+        'data' => [
+            'role' => $role->name(),
+            'permissions' => $role->permissions(),
+        ],
+    ], 200);
+    exit;
+}
+
+if ($method === 'GET' && $path === '/api/v1/analytics/daily') {
+    require_permission('analytics:read');
+    $start = require_query_date('start');
+    $end = require_query_date('end');
+
+    $service = new AnalyticsService();
+    $metrics = $service->fetchDailyMetrics($start, $end);
+
+    json_response(['data' => $metrics], 200);
+    exit;
+}
+
+if ($method === 'GET' && $path === '/api/v1/analytics/monthly') {
+    require_permission('analytics:read');
+    $start = require_query_date('start');
+    $end = require_query_date('end');
+
+    $service = new AnalyticsService();
+    $metrics = $service->fetchMonthlyMetrics($start, $end);
+
+    json_response(['data' => $metrics], 200);
+    exit;
+}
+
+if ($method === 'GET' && $path === '/api/v1/analytics/engagement-scores') {
+    require_permission('alerts:read');
+    $start = require_query_date('start');
+    $end = require_query_date('end');
+
+    $service = new AnalyticsService();
+    $scores = $service->fetchEngagementScores($start, $end);
+
+    json_response(['data' => $scores], 200);
+    exit;
+}
+
+if ($method === 'GET' && $path === '/api/v1/analytics/alerts') {
+    require_permission('alerts:read');
+    $start = require_query_date('start');
+    $end = require_query_date('end');
+
+    $service = new AnalyticsService();
+    $alerts = $service->fetchAlerts($start, $end);
+
+    json_response(['data' => $alerts], 200);
     exit;
 }
 
