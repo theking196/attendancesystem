@@ -5,14 +5,46 @@ declare(strict_types=1);
 require_once __DIR__ . '/../bootstrap.php';
 require_once __DIR__ . '/../src/Database.php';
 require_once __DIR__ . '/../src/Jobs/Queue.php';
+require_once __DIR__ . '/../src/Services/AnalyticsService.php';
 
 use AttendanceSystem\Jobs\Queue;
+use AttendanceSystem\Services\AnalyticsService;
+use AttendanceSystem\Auth;
+use DateTimeImmutable;
 
 function json_response(array $payload, int $status = 200): void
 {
     http_response_code($status);
     header('Content-Type: application/json');
     echo json_encode($payload, JSON_THROW_ON_ERROR);
+}
+
+function require_role(array $allowedRoles): string
+{
+    $role = Auth::resolveRole();
+    if (!in_array($role, $allowedRoles, true)) {
+        json_response(['error' => 'Forbidden.'], 403);
+        exit;
+    }
+
+    return $role;
+}
+
+function require_query_date(string $key): string
+{
+    $value = $_GET[$key] ?? null;
+    if (!is_string($value) || $value === '') {
+        json_response(['error' => sprintf('Missing %s query parameter.', $key)], 400);
+        exit;
+    }
+
+    $date = DateTimeImmutable::createFromFormat('Y-m-d', $value);
+    if ($date === false || $date->format('Y-m-d') !== $value) {
+        json_response(['error' => sprintf('Invalid %s date format. Use YYYY-MM-DD.', $key)], 400);
+        exit;
+    }
+
+    return $value;
 }
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -47,6 +79,54 @@ if ($method === 'GET' && preg_match('#^/jobs/(\d+)$#', (string) $path, $matches)
     }
 
     json_response($job, 200);
+    exit;
+}
+
+if ($method === 'GET' && $path === '/dashboard/analytics/daily') {
+    require_role(['viewer', 'manager', 'admin']);
+    $start = require_query_date('start');
+    $end = require_query_date('end');
+
+    $service = new AnalyticsService();
+    $metrics = $service->fetchDailyMetrics($start, $end);
+
+    json_response(['data' => $metrics], 200);
+    exit;
+}
+
+if ($method === 'GET' && $path === '/dashboard/analytics/monthly') {
+    require_role(['viewer', 'manager', 'admin']);
+    $start = require_query_date('start');
+    $end = require_query_date('end');
+
+    $service = new AnalyticsService();
+    $metrics = $service->fetchMonthlyMetrics($start, $end);
+
+    json_response(['data' => $metrics], 200);
+    exit;
+}
+
+if ($method === 'GET' && $path === '/dashboard/analytics/engagement-scores') {
+    require_role(['manager', 'admin']);
+    $start = require_query_date('start');
+    $end = require_query_date('end');
+
+    $service = new AnalyticsService();
+    $scores = $service->fetchEngagementScores($start, $end);
+
+    json_response(['data' => $scores], 200);
+    exit;
+}
+
+if ($method === 'GET' && $path === '/dashboard/analytics/alerts') {
+    require_role(['manager', 'admin']);
+    $start = require_query_date('start');
+    $end = require_query_date('end');
+
+    $service = new AnalyticsService();
+    $alerts = $service->fetchAlerts($start, $end);
+
+    json_response(['data' => $alerts], 200);
     exit;
 }
 
