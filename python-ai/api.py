@@ -8,6 +8,7 @@ import hmac
 import ipaddress
 import json
 import os
+import tempfile
 import time
 import uuid
 from http import HTTPStatus
@@ -92,6 +93,30 @@ def _validate_image(image: Any) -> None:
         base64.b64decode(data, validate=True)
     except (ValueError, binascii.Error):
         raise ValueError("Invalid base64")
+
+
+def _extract_embedding(image: dict[str, Any]) -> str:
+    data_base64 = image.get("data_base64")
+    if not isinstance(data_base64, str) or not data_base64:
+        raise ValueError("Missing data_base64")
+
+    image_bytes = base64.b64decode(data_base64, validate=True)
+    temp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(image_bytes)
+            temp_path = tmp.name
+
+        with open(temp_path, "rb") as handle:
+            payload = handle.read()
+
+        return base64.b64encode(hashlib.sha256(payload).digest()).decode("utf-8")
+    finally:
+        if temp_path:
+            try:
+                os.remove(temp_path)
+            except FileNotFoundError:
+                pass
 
 
 def _extract_request_id(payload: dict[str, Any] | None) -> str:
@@ -221,6 +246,14 @@ class FaceAIHandler(BaseHTTPRequestHandler):
             _validate_image(payload["image"])
         except ValueError as exc:
             self._send_error("IMAGE_DECODE_FAILED", request_id, {"error": str(exc)})
+            return
+        try:
+            _extract_embedding(payload["image"])
+        except ValueError as exc:
+            self._send_error("IMAGE_DECODE_FAILED", request_id, {"error": str(exc)})
+            return
+        except Exception:
+            self._send_error("INTERNAL_ERROR", request_id)
             return
 
         response = {

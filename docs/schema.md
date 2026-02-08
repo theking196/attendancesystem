@@ -9,7 +9,8 @@
 - `attendance_logs` belong to an organization and user, capturing attendance moments per tenant.
 - `analytics_daily`, `analytics_weekly`, and `analytics_monthly` store rollups keyed by period windows for each organization.
 - `config_settings` store per-tenant configuration entries keyed by `setting_key`.
-- `facial_embeddings` store per-user biometric embeddings tied to an organization.
+- `facial_embeddings` store per-user biometric embeddings tied to an organization, with encrypted payloads and salts.
+- `audit_logs` capture immutable audit events for sensitive actions like enrollment and embedding updates.
 - `jobs` store background work per tenant with JSON payloads.
 - `email_templates` store reusable templates per organization.
 - `email_queue` stores outbound email requests and optionally references an email template.
