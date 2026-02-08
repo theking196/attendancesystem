@@ -3,9 +3,15 @@ CREATE TABLE IF NOT EXISTS email_queue (
     organization_id BIGINT NOT NULL,
     template_id BIGINT,
     recipient_email VARCHAR(255) NOT NULL,
-    status VARCHAR(50) NOT NULL,
+    subject VARCHAR(255) NOT NULL,
+    body TEXT NOT NULL,
+    template_data TEXT,
+    status VARCHAR(50) NOT NULL DEFAULT 'queued',
     scheduled_at TIMESTAMP,
     sent_at TIMESTAMP,
+    last_attempt_at TIMESTAMP,
+    attempt_count INT NOT NULL DEFAULT 0,
+    failure_reason TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_email_queue_organization
         FOREIGN KEY (organization_id) REFERENCES organizations (id)
