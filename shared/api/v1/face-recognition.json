@@ -1,0 +1,169 @@
+{
+  "version": "v1",
+  "title": "Face Recognition Internal API",
+  "description": "Internal JSON API contract between the PHP app and the Python face-recognition service.",
+  "security": {
+    "type": "service-token",
+    "header": "X-Internal-Auth",
+    "requirements": [
+      "Token must be provisioned via secure secret storage.",
+      "Requests must be sent over TLS within the private network.",
+      "Requests without a valid token must be rejected with AUTH_INVALID_TOKEN."
+    ]
+  },
+  "endpoints": [
+    {
+      "name": "RecognizeFace",
+      "method": "POST",
+      "path": "/v1/face-recognition/recognize",
+      "description": "Detects and recognizes a face from an image payload.",
+      "request": {
+        "contentType": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["request_id", "image"],
+          "properties": {
+            "request_id": {
+              "type": "string",
+              "description": "Client-generated request identifier for tracing."
+            },
+            "image": {
+              "type": "object",
+              "required": ["content_type", "data_base64"],
+              "properties": {
+                "content_type": {
+                  "type": "string",
+                  "enum": ["image/jpeg", "image/png"],
+                  "description": "MIME type of the image payload."
+                },
+                "data_base64": {
+                  "type": "string",
+                  "description": "Base64-encoded image bytes."
+                }
+              }
+            },
+            "confidence_threshold": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Optional override for the match confidence threshold."
+            },
+            "metadata": {
+              "type": "object",
+              "description": "Optional client metadata for auditing.",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Recognition result.",
+          "schema": {
+            "type": "object",
+            "required": ["request_id", "status", "faces"],
+            "properties": {
+              "request_id": { "type": "string" },
+              "status": {
+                "type": "string",
+                "enum": ["recognized", "unrecognized", "no_face_detected"]
+              },
+              "faces": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["bounding_box", "confidence"],
+                  "properties": {
+                    "bounding_box": {
+                      "type": "object",
+                      "required": ["x", "y", "width", "height"],
+                      "properties": {
+                        "x": { "type": "integer" },
+                        "y": { "type": "integer" },
+                        "width": { "type": "integer" },
+                        "height": { "type": "integer" }
+                      }
+                    },
+                    "person_id": {
+                      "type": "string",
+                      "description": "Present when the face is recognized."
+                    },
+                    "confidence": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  }
+                }
+              },
+              "processing_time_ms": { "type": "integer" }
+            }
+          }
+        },
+        "400": {
+          "description": "Validation error.",
+          "schema": { "$ref": "#/schemas/error" }
+        },
+        "401": {
+          "description": "Authentication error.",
+          "schema": { "$ref": "#/schemas/error" }
+        },
+        "422": {
+          "description": "Image processing error.",
+          "schema": { "$ref": "#/schemas/error" }
+        },
+        "500": {
+          "description": "Unexpected service error.",
+          "schema": { "$ref": "#/schemas/error" }
+        }
+      }
+    }
+  ],
+  "errorCodes": [
+    {
+      "code": "AUTH_MISSING_TOKEN",
+      "httpStatus": 401,
+      "message": "Missing authentication token."
+    },
+    {
+      "code": "AUTH_INVALID_TOKEN",
+      "httpStatus": 401,
+      "message": "Authentication token is invalid."
+    },
+    {
+      "code": "VALIDATION_FAILED",
+      "httpStatus": 400,
+      "message": "Request validation failed."
+    },
+    {
+      "code": "IMAGE_DECODE_FAILED",
+      "httpStatus": 422,
+      "message": "Image could not be decoded or is corrupted."
+    },
+    {
+      "code": "FACE_NOT_FOUND",
+      "httpStatus": 422,
+      "message": "No face detected in the image."
+    },
+    {
+      "code": "INTERNAL_ERROR",
+      "httpStatus": 500,
+      "message": "Unexpected service error."
+    }
+  ],
+  "schemas": {
+    "error": {
+      "type": "object",
+      "required": ["request_id", "code", "message"],
+      "properties": {
+        "request_id": { "type": "string" },
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "details": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}
