@@ -71,6 +71,51 @@ function renderAccessNotice(details) {
   );
 }
 
+function renderRequestError(error) {
+  if (error?.details?.rbac) {
+    return renderAccessNotice(error.details);
+  }
+
+  return createNotice(
+    "Unable to load data",
+    error?.message ?? "Please try again later."
+  );
+}
+
+function renderEmptyState(message) {
+  return createNotice("No data available", message);
+}
+
+function getMetric(metrics, key) {
+  return Number(metrics?.[key] ?? 0);
+}
+
+function formatAlertDetails(details) {
+  if (!details) {
+    return "No additional details.";
+  }
+  if (typeof details === "string") {
+    return details;
+  }
+  if (details.late_count !== undefined) {
+    return `Late count: ${details.late_count} in ${details.window_days} days.`;
+  }
+  if (details.drop_points !== undefined) {
+    return `Drop: ${details.drop_points} pts over ${details.window_days} days.`;
+  }
+  return JSON.stringify(details);
+}
+
+function scoreStatus(score) {
+  if (score >= 90) {
+    return createTag("Excellent");
+  }
+  if (score >= 75) {
+    return createTag("Steady");
+  }
+  return createTag("At risk");
+}
+
 async function bootstrap() {
   let session;
   try {
@@ -138,15 +183,20 @@ async function bootstrap() {
         api.getMonthly(monthStart, monthEnd),
       ]);
 
-      const dailyTotal = daily.data.reduce(
-        (sum, row) => sum + Number(row.total_attendance ?? 0),
-        0
-      );
+      const dailyMetrics = daily.data ?? [];
+      const monthlyMetrics = monthly.data ?? [];
+
+      const dailyTotal = dailyMetrics.reduce((sum, row) => {
+        const present = getMetric(row.metrics, "present_count");
+        const late = getMetric(row.metrics, "late_count");
+        return sum + present + late;
+      }, 0);
       const monthlyAverage =
-        monthly.data.reduce(
-          (sum, row) => sum + Number(row.average_attendance ?? 0),
-          0
-        ) / Math.max(monthly.data.length, 1);
+        monthlyMetrics.reduce((sum, row) => {
+          const present = getMetric(row.metrics, "present_count");
+          const late = getMetric(row.metrics, "late_count");
+          return sum + present + late;
+        }, 0) / Math.max(monthlyMetrics.length, 1);
 
       const summaryGrid = document.createElement("div");
       summaryGrid.className = "grid";
@@ -166,39 +216,54 @@ async function bootstrap() {
 
       shell.content.appendChild(summaryGrid);
 
-      const dailyTable = createTable(
-        ["Date", "Attendance", "Late", "Remote"],
-        daily.data.map((row) => [
-          row.date,
-          row.total_attendance,
-          row.late_arrivals,
-          row.remote_attendance,
-        ])
-      );
+      if (dailyMetrics.length === 0) {
+        shell.content.appendChild(
+          renderEmptyState("No daily analytics were returned for this window.")
+        );
+      } else {
+        const dailyTable = createTable(
+          ["Date", "Present", "Late", "Absent", "Unique users"],
+          dailyMetrics.map((row) => [
+            row.period_start,
+            getMetric(row.metrics, "present_count"),
+            getMetric(row.metrics, "late_count"),
+            getMetric(row.metrics, "absent_count"),
+            getMetric(row.metrics, "unique_users"),
+          ])
+        );
 
-      const dailyCard = document.createElement("div");
-      dailyCard.className = "card";
-      dailyCard.append(renderSectionHeading("Daily Metrics", "Week snapshot"));
-      dailyCard.appendChild(dailyTable);
+        const dailyCard = document.createElement("div");
+        dailyCard.className = "card";
+        dailyCard.append(renderSectionHeading("Daily Metrics", "Week snapshot"));
+        dailyCard.appendChild(dailyTable);
+        shell.content.appendChild(dailyCard);
+      }
 
-      const monthlyTable = createTable(
-        ["Month", "Average Attendance", "Absences"],
-        monthly.data.map((row) => [
-          row.month,
-          row.average_attendance,
-          row.absences,
-        ])
-      );
-      const monthlyCard = document.createElement("div");
-      monthlyCard.className = "card";
-      monthlyCard.append(
-        renderSectionHeading("Monthly Trends", "6 month roll-up")
-      );
-      monthlyCard.appendChild(monthlyTable);
-
-      shell.content.append(dailyCard, monthlyCard);
+      if (monthlyMetrics.length === 0) {
+        shell.content.appendChild(
+          renderEmptyState("No monthly rollups were returned for this window.")
+        );
+      } else {
+        const monthlyTable = createTable(
+          ["Month", "Total logs", "Present", "Late", "Absent"],
+          monthlyMetrics.map((row) => [
+            row.period_start,
+            getMetric(row.metrics, "total_logs"),
+            getMetric(row.metrics, "present_count"),
+            getMetric(row.metrics, "late_count"),
+            getMetric(row.metrics, "absent_count"),
+          ])
+        );
+        const monthlyCard = document.createElement("div");
+        monthlyCard.className = "card";
+        monthlyCard.append(
+          renderSectionHeading("Monthly Trends", "6 month roll-up")
+        );
+        monthlyCard.appendChild(monthlyTable);
+        shell.content.appendChild(monthlyCard);
+      }
     } catch (error) {
-      shell.content.appendChild(renderAccessNotice(error.details));
+      shell.content.appendChild(renderRequestError(error));
     }
   });
 
@@ -217,13 +282,22 @@ async function bootstrap() {
     const { start, end } = dateRange(30);
     try {
       const scores = await api.getEngagement(start, end);
+      const scoreRows = scores.data ?? [];
+      if (scoreRows.length === 0) {
+        shell.content.appendChild(
+          renderEmptyState("No engagement scores were returned for this window.")
+        );
+        return;
+      }
+
       const scoreTable = createTable(
-        ["Team", "Score", "Delta", "Status"],
-        scores.data.map((row) => [
-          row.team,
+        ["User", "Score", "Attended", "Total", "Status"],
+        scoreRows.map((row) => [
+          row.user_id,
           row.score,
-          row.delta,
-          createTag(row.status),
+          row.attended_count,
+          row.total_count,
+          scoreStatus(Number(row.score)),
         ])
       );
       const card = document.createElement("div");
@@ -231,7 +305,7 @@ async function bootstrap() {
       card.appendChild(scoreTable);
       shell.content.appendChild(card);
     } catch (error) {
-      shell.content.appendChild(renderAccessNotice(error.details));
+      shell.content.appendChild(renderRequestError(error));
     }
   });
 
@@ -248,13 +322,21 @@ async function bootstrap() {
     const { start, end } = dateRange(14);
     try {
       const alerts = await api.getAlerts(start, end);
+      const alertRows = alerts.data ?? [];
+      if (alertRows.length === 0) {
+        shell.content.appendChild(
+          renderEmptyState("No alerts were returned for this window.")
+        );
+        return;
+      }
+
       const table = createTable(
-        ["Date", "Type", "Severity", "Status"],
-        alerts.data.map((row) => [
-          row.date,
-          row.type,
+        ["Date", "Type", "Severity", "Details"],
+        alertRows.map((row) => [
+          row.period_start,
+          row.alert_type,
           createTag(row.severity),
-          row.status,
+          formatAlertDetails(row.details),
         ])
       );
       const card = document.createElement("div");
@@ -262,7 +344,7 @@ async function bootstrap() {
       card.appendChild(table);
       shell.content.appendChild(card);
     } catch (error) {
-      shell.content.appendChild(renderAccessNotice(error.details));
+      shell.content.appendChild(renderRequestError(error));
     }
   });
 

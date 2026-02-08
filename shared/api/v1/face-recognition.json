@@ -3,19 +3,25 @@
   "title": "Face Recognition Internal API",
   "description": "Internal JSON API contract between the PHP app and the Python face-recognition service.",
   "security": {
-    "type": "service-token",
-    "header": "X-Internal-Auth",
+    "type": "hmac-sha256",
+    "headers": [
+      "X-Auth-Key",
+      "X-Auth-Signature",
+      "X-Auth-Timestamp",
+      "X-Auth-Nonce"
+    ],
     "requirements": [
-      "Token must be provisioned via secure secret storage.",
+      "Tokens must be provisioned via secure secret storage.",
       "Requests must be sent over TLS within the private network.",
-      "Requests without a valid token must be rejected with AUTH_INVALID_TOKEN."
+      "Requests without valid HMAC headers must be rejected with AUTH_INVALID_TOKEN.",
+      "The signature is computed from METHOD, PATH, TIMESTAMP, NONCE, and SHA-256(body)."
     ]
   },
   "endpoints": [
     {
       "name": "RecognizeFace",
       "method": "POST",
-      "path": "/v1/face-recognition/recognize",
+      "path": "/v1/recognize",
       "description": "Detects and recognizes a face from an image payload.",
       "request": {
         "contentType": "application/json",
@@ -94,6 +100,91 @@
                       "maximum": 1
                     }
                   }
+                }
+              },
+              "processing_time_ms": { "type": "integer" }
+            }
+          }
+        },
+        "400": {
+          "description": "Validation error.",
+          "schema": { "$ref": "#/schemas/error" }
+        },
+        "401": {
+          "description": "Authentication error.",
+          "schema": { "$ref": "#/schemas/error" }
+        },
+        "422": {
+          "description": "Image processing error.",
+          "schema": { "$ref": "#/schemas/error" }
+        },
+        "500": {
+          "description": "Unexpected service error.",
+          "schema": { "$ref": "#/schemas/error" }
+        }
+      }
+    },
+    {
+      "name": "EnrollValidate",
+      "method": "POST",
+      "path": "/v1/enroll-validate",
+      "description": "Validates low-risk enrollment images before storage.",
+      "request": {
+        "contentType": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["request_id", "person_id", "image", "risk_level"],
+          "properties": {
+            "request_id": {
+              "type": "string",
+              "description": "Client-generated request identifier for tracing."
+            },
+            "person_id": {
+              "type": "string",
+              "description": "The user identifier in the PHP domain."
+            },
+            "risk_level": {
+              "type": "string",
+              "enum": ["low"],
+              "description": "Only low risk validations are allowed synchronously."
+            },
+            "image": {
+              "type": "object",
+              "required": ["content_type", "data_base64"],
+              "properties": {
+                "content_type": {
+                  "type": "string",
+                  "enum": ["image/jpeg", "image/png"],
+                  "description": "MIME type of the image payload."
+                },
+                "data_base64": {
+                  "type": "string",
+                  "description": "Base64-encoded image bytes."
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Validation result.",
+          "schema": {
+            "type": "object",
+            "required": ["request_id", "status", "validation"],
+            "properties": {
+              "request_id": { "type": "string" },
+              "status": {
+                "type": "string",
+                "enum": ["accepted", "rejected"]
+              },
+              "validation": {
+                "type": "object",
+                "required": ["person_id", "matches", "confidence"],
+                "properties": {
+                  "person_id": { "type": "string" },
+                  "matches": { "type": "boolean" },
+                  "confidence": { "type": "number" }
                 }
               },
               "processing_time_ms": { "type": "integer" }
