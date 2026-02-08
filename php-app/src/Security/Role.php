@@ -73,4 +73,15 @@ final class Role
 
         return false;
     }
+
+    /**
+     * @return string[]
+     */
+    public function permissions(): array
+    {
+        return array_map(
+            static fn (Permission $permission) => $permission->name(),
+            $this->permissions
+        );
+    }
 }
