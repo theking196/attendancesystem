@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace AttendanceSystem;
 
+use RuntimeException;
+
 final class Auth
 {
     private const DEFAULT_ROLE = 'viewer';
@@ -11,16 +13,21 @@ final class Auth
     public static function resolveOrganizationId(): ?int
     {
         $orgIdHeader = $_SERVER['HTTP_X_ORGANIZATION_ID'] ?? null;
-        if ($orgIdHeader !== null && $orgIdHeader !== '') {
-            return (int) $orgIdHeader;
-        }
-
         $sessionOrgId = $_SESSION['organization_id'] ?? null;
-        if ($sessionOrgId !== null && $sessionOrgId !== '') {
-            return (int) $sessionOrgId;
+
+        $headerId = self::normalizeId($orgIdHeader);
+        $sessionId = self::normalizeId($sessionOrgId);
+
+        if ($sessionId !== null && $headerId !== null && $sessionId !== $headerId) {
+            throw new RuntimeException('Session is already bound to a different organization.');
         }
 
-        return null;
+        if ($sessionId === null && $headerId !== null) {
+            $_SESSION['organization_id'] = $headerId;
+            $sessionId = $headerId;
+        }
+
+        return $sessionId ?? $headerId;
     }
 
     public static function resolveRole(): string
@@ -36,5 +43,19 @@ final class Auth
         }
 
         return self::DEFAULT_ROLE;
+    }
+
+    private static function normalizeId(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $id = (int) $value;
+        if ($id <= 0) {
+            return null;
+        }
+
+        return $id;
     }
 }
