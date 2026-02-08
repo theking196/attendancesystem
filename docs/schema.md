@@ -8,6 +8,8 @@
 - `users` belong to an organization, optionally reference a role, and enforce unique email addresses within an organization.
 - `attendance_logs` belong to an organization and user, capturing attendance moments per tenant.
 - `analytics_daily`, `analytics_weekly`, and `analytics_monthly` store rollups keyed by period windows for each organization.
+- `engagement_scores` store per-user attendance rates for each organization and period window.
+- `analytics_alerts` store anomaly detection results for each organization and period window.
 - `config_settings` store per-tenant configuration entries keyed by `setting_key`.
 - `facial_embeddings` store per-user biometric embeddings tied to an organization, with encrypted payloads and salts.
 - `audit_logs` capture immutable audit events for sensitive actions like enrollment and embedding updates.
