@@ -6,11 +6,14 @@ require_once __DIR__ . '/../bootstrap.php';
 require_once __DIR__ . '/../src/Database.php';
 require_once __DIR__ . '/../src/Jobs/Queue.php';
 require_once __DIR__ . '/../src/Services/AnalyticsService.php';
+require_once __DIR__ . '/../src/Security/AccessGuard.php';
 
 use AttendanceSystem\Jobs\Queue;
 use AttendanceSystem\Services\AnalyticsService;
-use AttendanceSystem\Auth;
+use AttendanceSystem\Security\AccessGuard;
 use DateTimeImmutable;
+
+AccessGuard::enforce();
 
 function json_response(array $payload, int $status = 200): void
 {
@@ -21,13 +24,13 @@ function json_response(array $payload, int $status = 200): void
 
 function require_role(array $allowedRoles): string
 {
-    $role = Auth::resolveRole();
-    if (!in_array($role, $allowedRoles, true)) {
+    $role = AccessGuard::currentRole();
+    if (!$role->isAny($allowedRoles)) {
         json_response(['error' => 'Forbidden.'], 403);
         exit;
     }
 
-    return $role;
+    return $role->name();
 }
 
 function require_query_date(string $key): string
